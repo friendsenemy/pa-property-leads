@@ -1,0 +1,26 @@
+# Daily light refresh: tax claim lists, sheriff sales, estate notices, obituaries, then rebuild boards.
+name: Daily refresh
+on:
+  schedule: [{ cron: "23 10 * * *" }]   # ~6:23 AM Eastern
+  workflow_dispatch:
+permissions: { contents: write }
+concurrency: { group: refresh, cancel-in-progress: false }
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils tesseract-ocr
+      - run: pip install -q -r requirements.txt
+      - run: python -m engine.taxclaim || echo "taxclaim failed, keeping last data"
+      - run: python -m engine.sheriff || echo "sheriff failed"
+      - run: python -m engine.estates || echo "estates failed"
+      - run: python -m engine.obits || echo "obits failed"
+      - run: python -m engine.build
+      - name: Commit
+        run: |
+          git config user.name "pa-leads-bot"; git config user.email "actions@users.noreply.github.com"
+          git add data && (git diff --cached --quiet || (git commit -qm "Daily refresh $(date -u +%F)" && git push))

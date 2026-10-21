@@ -1,0 +1,25 @@
+# Weekly heavy refresh: parcels/owners, coal overlays, wells + 12 months of DEP production + permits.
+name: Weekly refresh
+on:
+  schedule: [{ cron: "41 7 * * 1" }]    # Monday ~3:41 AM Eastern
+  workflow_dispatch:
+permissions: { contents: write }
+concurrency: { group: refresh, cancel-in-progress: false }
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils tesseract-ocr
+      - run: pip install -q -r requirements.txt
+      - run: python -m engine.parcels || echo "parcels failed, keeping last data"
+      - run: python -m engine.coal || echo "coal failed"
+      - run: python -m engine.wells || echo "wells failed"
+      - run: python -m engine.build
+      - name: Commit
+        run: |
+          git config user.name "pa-leads-bot"; git config user.email "actions@users.noreply.github.com"
+          git add data && (git diff --cached --quiet || (git commit -qm "Weekly refresh $(date -u +%F)" && git push))
