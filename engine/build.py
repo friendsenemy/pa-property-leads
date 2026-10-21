@@ -20,6 +20,14 @@ LABEL = {"estate_notice": "⚰ Estate opened", "sheriff": "🔨 Sheriff sale", "
          "out_of_state": "✈ Owner out of state", "out_of_county": "Owner out of county", "old_deed": "📜 Old deed",
          "gas_near": "🔥 Producing gas wells nearby", "pad_on_parcel": "🛢 Well pad on parcel", "new_permit_near": "🆕 New permits nearby"}
 HARD = {"estate_notice", "sheriff", "judicial", "upset", "obit", "owner_estate", "unsound", "major_repair"}
+# Only parcels that could pay royalties are shown: in the gas field, big enough to matter,
+# not owned by an operator/coal/mineral company, and not hand-checked as "minerals already sold".
+MIN_ACRES = 2.0
+OPERATOR_RE = re.compile(r"\b(CONSOL|CNX|EQT|RANGE RES|RICE|CHEVRON|COTERRA|GREYLOCK|DIVERSIFIED|COAL|GAS CO|ENERGY|MINERALS|ROYALT|MIDSTREAM|PIPELINE|TEXAS EASTERN|EQUITRANS|RESOURCES)\b")
+DEED_PTS = {"unleased": 30, "leased_not_producing": 25, "unknown": 0, "leased_producing": -15}
+DEED_LABEL = {"unleased": "⛏ Deed check: gas never leased", "leased_not_producing": "⛏ Deed check: leased, no checks yet",
+              "unknown": "⛏ Deed check: read the deed", "leased_producing": "⛏ Deed check: already getting royalties"}
+LABEL.update({"deed_" + k: v for k, v in DEED_LABEL.items()})
 
 
 def hav(lat1, lon1, lat2, lon2):
@@ -187,6 +195,20 @@ def run():
         s = x["signals"]
         motiv = set(s) & (HARD | {"out_of_state", "out_of_county", "old_deed", "life_estate"})
         return x["hard"] > 0 or (x.get("gas") and motiv)
+    checks = {k: v for k, v in (load("deedchecks.json", {}) or {}).items() if not k.startswith("_")}
+
+    def mineral_ok(x):
+        c = checks.get(x["id"])
+        return (x.get("gas") and (x.get("acres") or 0) >= MIN_ACRES and not OPERATOR_RE.search(x.get("owner") or "")
+                and not (c and c.get("verdict") == "sold"))
+    rows = [x for x in rows if mineral_ok(x)]
+    for x in rows:
+        c = checks.get(x["id"])
+        if c:
+            x["deedcheck"] = c
+            k = "deed_" + c["verdict"]
+            x["signals"][k] = c["note"]
+            x["score"] += DEED_PTS.get(c["verdict"], 0)
     leads = [x for x in rows if is_lead(x)]
     leads.sort(key=lambda x: (-x["score"], -(x.get("gas") or {}).get("producing_near", 0)))
     minerals = [x for x in rows if x.get("gas") and (set(x["signals"]) & (HARD | {"out_of_state", "out_of_county", "old_deed", "life_estate"}) or (x.get("acres") or 0) >= 20)]
@@ -222,7 +244,8 @@ def run():
     save("board.json", {"generated": dt.datetime.now(dt.timezone.utc).isoformat(), "labels": LABEL, "points": PTS,
                         "periods": wells.get("periods", []), "counts": {"leads": len(leads), "minerals": len(minerals)},
                         "rows": light, "leads": [x["id"] for x in leads], "minerals": [x["id"] for x in minerals[:3000]],
-                        "estates": estates[:400], "sheriff": sheriff, "tax_lists": load("taxclaim.json", {}).get("lists", {})})
+                        "estates": [e for e in estates if e["name"] in {x.get("estate_name") for x in light}],
+                        "sheriff": [r for r in sheriff if r.get("id") in keep], "min_acres": MIN_ACRES, "tax_lists": load("taxclaim.json", {}).get("lists", {})})
     save("details.json", details)
     save("lookup.json", [[r["id"], r.get("ctrl", ""), r.get("pid"), r.get("owner", ""), r.get("owner2", ""), r.get("mail", ""), r.get("city", ""),
                           r.get("st", ""), r.get("lu", ""), r.get("blight", ""), r.get("acres"), r.get("deed", ""), r.get("lat"), r.get("lon")] for r in parcels])

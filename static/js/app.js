@@ -6,7 +6,7 @@ const money = (n) => n == null || n === "" ? "" : "$" + Number(n).toLocaleString
 const num = (n) => n == null ? "" : Number(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
 const ac = (n) => !n ? "" : Number(n).toLocaleString("en-US", { maximumFractionDigits: n < 10 ? 2 : 0 });
 const HARD = new Set(["estate_notice", "sheriff", "judicial", "obit", "owner_estate", "upset", "unsound", "major_repair"]);
-const GASK = new Set(["gas_near", "pad_on_parcel", "new_permit_near"]);
+const GASK = new Set(["gas_near", "pad_on_parcel", "new_permit_near", "deed_unleased", "deed_leased_not_producing", "deed_unknown"]);
 const STATUS = { "": "—", hot: "Hot", pursuing: "Pursuing", followup: "Follow up", contacted: "Contacted", dead: "Dead / pass" };
 
 /* ---------- passcode gate (same code as the Maryland tool) ---------- */
@@ -140,11 +140,11 @@ const App = {
         const stacked = this.board.leads.filter((x) => x.hard >= 2).length;
         const sigOpts = Object.keys(this.board.points).map((k) => `<option value="${k}">${esc(this.board.labels[k] || k)}</option>`).join("");
         return `<div class="stats">
-            <div class="stat cyan"><div class="v">${this.board.leads.length}</div><div class="l">Leads with a motivation signal</div></div>
+            <div class="stat cyan"><div class="v">${this.board.leads.length}</div><div class="l">Mineral parcels with a reason to sell</div></div>
             <div class="stat red"><div class="v">${stacked}</div><div class="l">Stacked (2+ hard signals)</div></div>
             <div class="stat gas"><div class="v">${this.board.leads.filter((x) => x.gas).length}</div><div class="l">Leads that also sit in the gas field</div></div>
             <div class="stat purple"><div class="v">${this.board.sheriff.filter((s) => s.sale_date >= today()).length}</div><div class="l">Upcoming sheriff sales</div></div></div>
-            <div class="explain"><b>Stacked Leads</b> ranks every Greene County parcel by how many reasons the owner may want to sell. <b>Red chips</b> are hard signals (estate notice, tax sale list, sheriff sale, owner is an estate, unsound house). <b>Orange chips</b> mean producing gas wells or a new permit nearby — the owner may also hold mineral rights or royalties worth buying. Click any row for the full card.</div>
+            <div class="explain"><b>Only parcels that could pay royalty checks are shown:</b> inside the gas field (producing wells within ¾ mile, a pad on the parcel, or new permits within 1.5 miles), ${this.board.min_acres || 2}+ acres, not owned by a gas/coal company, and not already sold off per the deed checks. <b>Stacked Leads</b> ranks them by how many reasons the owner may want to sell. <b>Red chips</b> are hard signals (estate notice, tax sale list, sheriff sale, owner is an estate, unsound house). <b>Orange chips</b> mean producing gas wells or a new permit nearby — the owner may also hold mineral rights or royalties worth buying. Click any row for the full card.</div>
             ${this.filters(`<select data-f="mh"><option value="0">Any hard signals</option><option value="1">1+ hard</option><option value="2">2+ hard (stacked)</option></select>
               <select data-f="sg"><option value="">Any signal</option>${sigOpts}</select><label class="small dim"><input type="checkbox" data-f="gas"> In the gas field</label>`)}
             <div class="tablewrap"><table>${this.head([["Score", "score"], ["Hard", "hard"], ["Owner", "owner"], ["Parcel ID"], ["Signals"], ["Acres", "acres", "hide-sm"], ["Wells ≤¾ mi", "gas", "hide-sm"], ["Status"]])}
@@ -197,7 +197,7 @@ const App = {
         if (!this.f("past")) rows = rows.filter((s) => s.sale_date >= today() || /postpon/i.test(s.status || ""));
         rows.sort((a, b) => a.sale_date.localeCompare(b.sale_date));
         this.cur = rows;
-        return `<div class="explain"><b>Sheriff sales</b> are mortgage and judgment foreclosures auctioned at the Greene County Courthouse. Before the sale the owner can still sell — reach them early. Many get postponed or settled. The <b>handbill</b> link has the legal description.</div>
+        return `<div class="explain">Only sheriff sales on mineral parcels (gas field, 2+ acres) are listed — most Greene sheriff sales are small town lots, so this list is often empty. <b>Sheriff sales</b> are mortgage and judgment foreclosures auctioned at the Greene County Courthouse. Before the sale the owner can still sell — reach them early. Many get postponed or settled. The <b>handbill</b> link has the legal description.</div>
             ${this.filters(`<label class="small dim"><input type="checkbox" data-f="past"> Show past sales</label>`)}
             <div class="tablewrap"><table>${this.head([["Sale date"], ["Defendant (owner)"], ["Plaintiff"], ["Property"], ["Judgment"], ["Status"], ["Parcel"]])}
             <tbody>${rows.map((s) => `<tr ${s.id ? `data-id="${esc(this.byId[s.id] ? s.id : "SHERIFF:" + s.case)}"` : `data-id="SHERIFF:${esc(s.case)}"`}><td class="mono">${esc(s.sale_date)}</td><td><b>${esc(s.defendant)}</b>${s.estate ? ` <span class="chip hard">estate</span>` : ""}</td>
