@@ -103,10 +103,19 @@ const App = {
         const csv = $("#csv"); if (csv) csv.onclick = () => this.csv();
     },
     f(k) { return this.filt[this.tab + k]; },
+    /* Every word typed must appear somewhere, in any order, ignoring periods/commas:
+       "Robert M. Smith" finds "SMITH ROBERT M ET AL", "mcdonald" finds "MC DONALD". */
+    hit(q, vals) {
+        const words = String(q || "").toLowerCase().replace(/[.,;:'"]/g, " ").split(/\s+/).filter(Boolean);
+        if (!words.length) return true;
+        const hay = vals.filter(Boolean).join(" ").toLowerCase().replace(/[.,;:'"]/g, " ");
+        const tight = hay.replace(/\s+/g, "");
+        const esc = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return words.every((w) => new RegExp("(^|[\\s/(-])" + esc(w)).test(hay) || (w.length >= 4 && tight.includes(w)));
+    },
     match(x) {
         if (!this.q) return true;
-        const q = this.q.toLowerCase();
-        return [x.id, x.ctrl, x.owner, x.owner2, x.mail, x.city, x.address, x.defendant, x.name, x.late_of].some((v) => v && String(v).toLowerCase().includes(q));
+        return this.hit(this.q, [x.id, x.ctrl, x.owner, x.owner2, x.mail, x.city, x.address, x.defendant, x.name, x.late_of, x.estate_name]);
     },
     sorted(rows, getters) {
         const s = this.sort[this.tab]; if (!s || !getters[s.k]) return rows;
@@ -118,7 +127,7 @@ const App = {
     },
     status(id) { const n = Notes.get(id); return n && n.status ? `<span class="badge ${esc(n.status)}">${esc(STATUS[n.status] || n.status)}</span>` : ""; },
     head(cols) { return `<thead><tr>${cols.map(([l, k, cls]) => `<th ${k ? `data-s="${k}"` : ""} class="${cls || ""}">${l}</th>`).join("")}</tr></thead>`; },
-    filters(extra) { return `<div class="filters"><input id="q" placeholder="Search owner, ID, mailing city…" style="min-width:240px">${extra || ""}<span class="spacer"></span><button class="btn" id="csv">Download CSV</button></div>`; },
+    filters(extra) { return `<div class="filters"><input id="q" placeholder="Name (any order), parcel ID or town…" style="min-width:240px">${extra || ""}<span class="spacer"></span><button class="btn" id="csv">Download CSV</button></div>`; },
 
     /* ---- Stacked leads ---- */
     tab_leads() {
@@ -217,7 +226,7 @@ const App = {
     /* ---- Lookup ---- */
     tab_lookup() {
         const q = this.q.trim().toLowerCase();
-        let rows = q.length < 2 ? [] : this.lookup.filter((r) => [r[0], r[1], r[3], r[4], r[5], r[6]].some((v) => v && String(v).toLowerCase().includes(q))).slice(0, 300);
+        let rows = q.length < 2 ? [] : this.lookup.filter((r) => this.hit(q, [r[0], r[1], r[3], r[4], r[5], r[6]])).slice(0, 300);
         this.cur = rows.map((r) => ({ id: r[0], ctrl: r[1], owner: r[3], owner2: r[4], mail: r[5], city: r[6], st: r[7], lu: r[8], blight: r[9], acres: r[10], deed: r[11] }));
         return `<div class="explain"><b>Parcel Lookup</b> searches all ${num(this.lookup.length)} Greene County parcels by owner, parcel ID (e.g. 06-05-124), control number or mailing address. Type at least 2 characters.</div>
             ${this.filters()}
@@ -229,7 +238,7 @@ const App = {
 
     /* ---- My Leads ---- */
     tab_mine() {
-        const rows = Object.values(Notes.latest).filter((r) => r.status && r.status !== "dead" && (!this.q || (r.label + r.id + r.notes).toLowerCase().includes(this.q.toLowerCase())));
+        const rows = Object.values(Notes.latest).filter((r) => r.status && r.status !== "dead" && this.hit(this.q, [r.label, r.id, r.notes]));
         this.cur = rows;
         return `<div class="explain"><b>My Leads</b> are the Greene County leads you or Todd marked with a status. Notes are shared through the same sheet as the Maryland tool, so everyone with the passcode sees them. ${Notes.error ? `<span style="color:var(--red)">Could not reach the shared sheet right now.</span>` : ""}</div>
             ${this.filters()}
